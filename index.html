@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,21 +7,35 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Animasi Background Mesh Gradient -->
+  <div class="bg-shapes">
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+    <div class="shape shape-3"></div>
+  </div>
+
   <main>
     <header>
-      <h1>P2P Share</h1>
-      <p>Kirim file langsung antar browser. File tidak diupload ke server.</p>
+      <div class="header-top row between align-center">
+        <h1>P2P Share</h1>
+        <!-- Tombol Toggle Tema -->
+        <button id="themeToggle" class="btn-icon" aria-label="Toggle Theme">
+          <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
+      </div>
+      <p>Kirim file langsung antar browser. Tanpa server perantara.</p>
     </header>
 
     <!-- Halaman awal -->
     <section id="home" class="stack">
-      <div class="card">
+      <div class="card glass">
         <h2>Buat room</h2>
         <p>Kamu dapat kode 6 karakter. Bagikan ke teman supaya dia bisa gabung.</p>
-        <button id="btnCreate" class="primary">Buat room</button>
+        <button id="btnCreate" class="primary w-100">Buat Room</button>
       </div>
 
-      <div class="card">
+      <div class="card glass">
         <h2>Gabung room</h2>
         <p>Masukkan kode room dari temanmu.</p>
         <form id="joinForm" class="row">
@@ -36,26 +50,31 @@
 
     <!-- Halaman room -->
     <section id="room" class="stack" hidden>
-      <div class="card">
-        <div class="row between">
-          <span class="label">Kode room</span>
+      <div class="card glass">
+        <div class="row between align-center">
+          <span class="label">Status Koneksi</span>
           <span id="status" class="status wait">Menyiapkan…</span>
         </div>
-        <div id="roomCode" class="code">------</div>
-        <div class="row">
-          <button id="btnCopyCode">Salin kode</button>
-          <button id="btnCopyLink">Salin link</button>
-          <button id="btnLeave" class="ghost">Keluar</button>
+        
+        <div class="code-container">
+          <span class="label">Room Code</span>
+          <div id="roomCode" class="code">------</div>
+        </div>
+
+        <div class="row actions-row">
+          <button id="btnCopyCode" class="btn-glass">Salin kode</button>
+          <button id="btnCopyLink" class="btn-glass">Salin link</button>
+          <button id="btnLeave" class="btn-glass danger">Keluar</button>
         </div>
       </div>
 
-      <div id="sendBox" class="card" hidden>
-        <label id="drop" class="drop">
+      <div id="sendBox" class="card glass" hidden>
+        <label id="drop" class="drop glass-inset">
           <input id="fileInput" type="file" multiple hidden>
-          <strong>Pilih file</strong>
-          <span>atau seret file ke sini</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <strong>Kirim File</strong>
+          <span>Pilih file atau seret file ke sini</span>
           <small id="limitInfo"></small>
-          <small>Kedua pihak bisa saling kirim.</small>
         </label>
       </div>
 

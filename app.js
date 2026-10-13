@@ -139,7 +139,7 @@ function homeMessage(text) {
 // Kartu transfer (satu kartu = satu file). Pakai textContent supaya aman dari XSS.
 function makeCard(title, sub) {
   const el = document.createElement('div');
-  el.className = 'card transfer';
+  el.className = 'card glass transfer';
   const t = document.createElement('div');
   t.className = 't-title';
   t.textContent = title;
@@ -605,3 +605,33 @@ cleanupStorage();
 // Buka link ...?room=KODE -> langsung gabung
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam) joinRoom(roomParam);
+
+/* ============================================================
+   THEME TOGGLE (DARK/LIGHT MODE)
+   ============================================================ */
+const themeToggleBtn = document.getElementById('themeToggle');
+const iconSun = document.getElementById('icon-sun');
+const iconMoon = document.getElementById('icon-moon');
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+  if (theme === 'dark') {
+    iconSun.hidden = false;
+    iconMoon.hidden = true;
+  } else {
+    iconSun.hidden = true;
+    iconMoon.hidden = false;
+  }
+}
+
+// Cek preferensi tema saat halaman dimuat (dari local storage atau settingan OS sistem)
+const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+setTheme(savedTheme);
+
+if (themeToggleBtn) {
+  themeToggleBtn.onclick = () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+  };
+}
