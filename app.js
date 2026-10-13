@@ -10,14 +10,29 @@ const RAM_LIMIT = 200 * 1024 * 1024; // batas kalau browser penerima terpaksa pa
 const ROOM_PREFIX = 'p2pshare-';    // supaya ID tidak bentrok di server PeerJS publik
 
 const PEER_OPTIONS = {
+  secure: true, // Wajib true agar stabil di HTTPS
   config: {
     iceServers: [
+      // 1. STUN Servers (Untuk WiFi biasa)
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:global.stun.twilio.com:3478' }
-      // TURN (cadangan kalau koneksi langsung gagal). Isi di README langkah 8, lalu hapus tanda //
-      // { urls: 'turn:NAMA-SERVER-TURN:80', username: 'USERNAME', credential: 'PASSWORD' },
+      
+      // 2. TURN Servers (Wajib untuk menembus Data Seluler / Jaringan Ketat)
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ],
   },
 };
