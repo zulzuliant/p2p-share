@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>P2P Share</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>P2P Share</h1>
+      <p>Kirim file langsung antar browser. File tidak diupload ke server.</p>
+    </header>
+
+    <!-- Halaman awal -->
+    <section id="home" class="stack">
+      <div class="card">
+        <h2>Buat room</h2>
+        <p>Kamu dapat kode 6 karakter. Bagikan ke teman supaya dia bisa gabung.</p>
+        <button id="btnCreate" class="primary">Buat room</button>
+      </div>
+
+      <div class="card">
+        <h2>Gabung room</h2>
+        <p>Masukkan kode room dari temanmu.</p>
+        <form id="joinForm" class="row">
+          <input id="joinCode" maxlength="6" placeholder="KODE" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false" aria-label="Kode room">
+          <button class="primary">Gabung</button>
+        </form>
+      </div>
+
+      <p id="homeMsg" class="msg" hidden></p>
+    </section>
+
+    <!-- Halaman room -->
+    <section id="room" class="stack" hidden>
+      <div class="card">
+        <div class="row between">
+          <span class="label">Kode room</span>
+          <span id="status" class="status wait">Menyiapkan…</span>
+        </div>
+        <div id="roomCode" class="code">------</div>
+        <div class="row">
+          <button id="btnCopyCode">Salin kode</button>
+          <button id="btnCopyLink">Salin link</button>
+          <button id="btnLeave" class="ghost">Keluar</button>
+        </div>
+      </div>
+
+      <div id="sendBox" class="card" hidden>
+        <label id="drop" class="drop">
+          <input id="fileInput" type="file" multiple hidden>
+          <strong>Pilih file</strong>
+          <span>atau seret file ke sini</span>
+          <small id="limitInfo"></small>
+          <small>Kedua pihak bisa saling kirim.</small>
+        </label>
+      </div>
+
+      <div id="transfers" class="stack"></div>
+    </section>
+
+    <footer>
+      <small>Jangan tutup tab selama transfer berlangsung.</small>
+    </footer>
+  </main>
+
+  <script src="peerjs.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
