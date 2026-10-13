@@ -195,6 +195,21 @@ function openRoomView(code) {
   $('roomCode').textContent = code;
   $('sendBox').hidden = true;
   $('transfers').replaceChildren();
+  
+  // Generate QR Code / Barcode otomatis
+  const qrContainer = $('qrCodeContainer');
+  if (qrContainer) {
+    qrContainer.innerHTML = ''; // Bersihkan QR sebelumnya jika ada
+    new QRCode(qrContainer, {
+      text: roomLink(code), // Link yang akan discan
+      width: 150,
+      height: 150,
+      colorDark : "#000000",
+      colorLight : "#ffffff",
+      correctLevel : QRCode.CorrectLevel.M
+    });
+  }
+
   show('room');
 }
 
@@ -581,7 +596,26 @@ $('btnCreate').onclick = createRoom;
 $('joinForm').onsubmit = (e) => { e.preventDefault(); joinRoom($('joinCode').value); };
 $('btnLeave').onclick = leave;
 $('btnCopyCode').onclick = (e) => copyText($('roomCode').textContent, e.target);
-$('btnCopyLink').onclick = (e) => copyText(roomLink($('roomCode').textContent), e.target);
+$('btnCopyLink').onclick = async (e) => {
+  const url = roomLink($('roomCode').textContent);
+  
+  // Gunakan Native Share API (jika di HP akan langsung buka pilihan WA, IG, Telegram, dll)
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'P2P Share Room',
+        text: 'Ayo gabung ke room P2P Share untuk kirim file secara langsung!',
+        url: url
+      });
+    } catch (err) {
+      // Abaikan jika user membatalkan popup share
+      console.log('Share dibatalkan', err);
+    }
+  } else {
+    // Fallback jika dibuka di Laptop / PC biasa
+    copyText(url, e.target);
+  }
+};
 
 const fileInput = $('fileInput');
 fileInput.onchange = () => {
@@ -605,6 +639,7 @@ cleanupStorage();
 // Buka link ...?room=KODE -> langsung gabung
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam) joinRoom(roomParam);
+
 
 /* ============================================================
    THEME TOGGLE (DARK/LIGHT MODE)

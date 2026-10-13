@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>P2P Share</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
   <!-- Animasi Background Mesh Gradient -->
@@ -59,11 +60,14 @@
         <div class="code-container">
           <span class="label">Room Code</span>
           <div id="roomCode" class="code">------</div>
+          
+          <!-- Tempat QR Code Muncul -->
+          <div id="qrCodeContainer" class="qr-box"></div>
         </div>
 
         <div class="row actions-row">
-          <button id="btnCopyCode" class="btn-glass">Salin kode</button>
-          <button id="btnCopyLink" class="btn-glass">Salin link</button>
+          <button id="btnCopyCode" class="btn-glass">Salin Kode</button>
+          <button id="btnCopyLink" class="btn-glass">Bagikan Link</button>
           <button id="btnLeave" class="btn-glass danger">Keluar</button>
         </div>
       </div>

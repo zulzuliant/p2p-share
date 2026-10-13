@@ -183,6 +183,25 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); box-shado
 .bar { height: 8px; border-radius: 4px; background: var(--glass-inset); overflow: hidden; margin-bottom: 16px; }
 .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; border-radius: 4px; }
 
+/* Style untuk Barcode / QR Code */
+.qr-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 20px;
+  padding: 16px;
+  background: #ffffff; /* Latar harus putih agar kamera mudah scan */
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+.qr-box img {
+  max-width: 150px;
+  border-radius: 4px;
+}
+
 @media (max-width: 400px) {
   .actions-row { flex-direction: column; }
   .btn-glass { width: 100%; }
