@@ -21,6 +21,11 @@ const PEER_OPTIONS = {
 
 // Penerima menulis ke disk lewat OPFS kalau browsernya mendukung, kalau tidak pakai RAM
 const HAS_OPFS = !!(navigator.storage && navigator.storage.getDirectory && window.Worker);
+// Chrome/Edge desktop: bisa menyimpan langsung ke folder pilihan pengguna (tanpa batas kuota browser)
+const HAS_PICKER = typeof window.showSaveFilePicker === 'function';
+// File sebesar ini ke atas disimpan lewat jendela "Simpan sebagai" kalau tersedia,
+// supaya tidak butuh ruang dua kali lipat (salinan sementara + file unduhan)
+const PICKER_MIN = 1024 * 1024 * 1024;
 
 /* ============================================================
    HELPER
@@ -209,6 +214,7 @@ function makeCard(title, sub) {
       s.textContent = `${label}… ${pct}% · ${fmtSize(speed)}/s`;
     },
     hideBar() { bar.hidden = true; el.dataset.state = 'fail'; },
+    done() { el.dataset.state = 'done'; },
     clearButtons: () => actions.replaceChildren(),
     button(label, onClick, cls = '') {
       const b = document.createElement('button');
@@ -424,16 +430,64 @@ function openMemorySink(mime) {
   return sink;
 }
 
-// Cek apakah ada ruang untuk file ini. Mengembalikan alasan penolakan, atau '' kalau aman.
-async function checkSpace(size) {
-  if (!HAS_OPFS) {
-    return size > RAM_LIMIT ? 'browser penerima hanya mendukung file sampai ' + fmtSize(RAM_LIMIT) : '';
-  }
+// Simpan langsung ke file pilihan pengguna (File System Access API). Tidak lewat kuota browser.
+async function openPickerSink(handle) {
+  const w = await handle.createWritable();
+  let total = 0, dead = null;
+  let chain = Promise.resolve();
+  const sink = {
+    onWritten() {},
+    onError() {},
+    write(buf) {
+      chain = chain.then(async () => {
+        if (dead) return;
+        await w.write(buf);
+        total += buf.byteLength;
+        sink.onWritten(total);
+      }).catch((err) => {
+        if (dead) return;
+        dead = err;
+        sink.onError((err && err.name ? err.name + ': ' : '') + (err && err.message || err));
+      });
+    },
+    async finish() {
+      await chain;
+      if (dead) throw dead;
+      await w.close();
+      return null; // sudah tersimpan di disk, tidak ada file untuk diunduh lagi
+    },
+    abort() { chain.then(() => w.abort()).catch(() => {}); },
+  };
+  return sink;
+}
+
+// Perkiraan ruang kosong. Hanya perkiraan: beberapa browser (mode privat, Brave, Firefox) melaporkan angka kecil.
+async function freeSpace() {
   try {
     const { quota, usage } = await navigator.storage.estimate();
-    if (quota && size > (quota - usage) * 0.95) return 'ruang penyimpanan browser penerima tidak cukup';
+    if (quota > 0) return Math.max(quota - (usage || 0), 0);
   } catch {}
-  return '';
+  return null; // tidak diketahui
+}
+
+// Tentukan jalur penyimpanan yang mungkin untuk file ini.
+// Penerima baru menolak kalau TIDAK ADA jalur sama sekali, bukan cuma karena perkiraan kuota kecil.
+async function planStorage(size) {
+  const free = HAS_OPFS ? await freeSpace() : null;
+  const diskOk = HAS_OPFS && (free === null || size <= free * 0.95);
+  const canRam = size <= RAM_LIMIT;
+  let reason = '';
+  let warn = '';
+  if (!diskOk && !HAS_PICKER && !canRam) {
+    if (HAS_OPFS) {
+      // Perkiraan kuota bisa salah, jadi jangan menutup pintu: biarkan pengguna memutuskan.
+      warn = 'Perkiraan ruang kosong browser ' + fmtSize(free) + ', mungkin tidak cukup untuk ' + fmtSize(size) + '. Transfer bisa gagal di tengah jalan.';
+    } else {
+      reason = 'browser penerima hanya mendukung file sampai ' + fmtSize(RAM_LIMIT);
+    }
+  }
+  console.log('[storage] file', size, 'free', free, { diskOk, HAS_PICKER, canRam });
+  return { free, diskOk, canRam, reason, warn };
 }
 
 /* ============================================================
@@ -556,8 +610,13 @@ async function onDone() {
   try {
     const file = await inc.sink.finish();
     inc.card.progress(1);
-    inc.card.sub('Selesai · ' + fmtSize(inc.size));
-    inc.card.link('Unduh', URL.createObjectURL(file), inc.name);
+    if (file) {
+      inc.card.sub('Selesai · ' + fmtSize(inc.size));
+      inc.card.link('Unduh', URL.createObjectURL(file), inc.name);
+    } else {
+      inc.card.sub('Tersimpan · ' + fmtSize(inc.size) + ' · ' + inc.savedAs);
+      inc.card.done();
+    }
   } catch (err) {
     inc.card.hideBar();
     inc.card.sub('Gagal menyimpan: ' + (err.message || err));
@@ -584,8 +643,10 @@ async function onOffer(m) {
   card.state('offer');
   pendingOffer = card; // tandai dulu supaya tawaran lain tidak menyelip selama pengecekan
 
-  const reason = await checkSpace(m.size);
+  const plan = await planStorage(m.size);
+  const reason = plan.reason;
   if (c !== conn) return; // koneksi sudah putus selama pengecekan
+  if (plan.warn) card.sub(plan.warn);
   if (reason) {
     pendingOffer = null;
     card.hideBar();
@@ -593,17 +654,39 @@ async function onOffer(m) {
     return sendCtl(c, { type: 'reject', reason });
   }
 
-  card.button('Terima', async () => {
+  const acceptHandler = async () => {
     if (!c.open || pendingOffer !== card) return;
     card.clearButtons();
     card.sub('Menyiapkan penyimpanan…');
 
+    // 1) Simpan langsung ke folder pilihan (desktop Chrome/Edge): file besar, atau kalau kuota browser kecil.
+    //    Harus dipanggil paling awal supaya masih dihitung sebagai hasil klik pengguna.
     let sink = null;
-    if (HAS_OPFS) {
+    let savedAs = '';
+    const wantPicker = HAS_PICKER && (m.size >= PICKER_MIN || !plan.diskOk);
+    if (wantPicker) {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: m.name });
+        sink = await openPickerSink(handle);
+        savedAs = handle.name;
+      } catch (err) {
+        console.warn('Simpan-sebagai tidak dipakai:', err);
+        if (err && err.name === 'AbortError' && !plan.diskOk && !plan.canRam) {
+          // pengguna menutup jendela dan tidak ada jalur lain: kembalikan tombol
+          card.sub('Dibatalkan. Tekan Terima lagi lalu pilih lokasi simpan.');
+          card.button('Terima', acceptHandler, 'primary');
+          card.button('Tolak', rejectHandler, 'ghost');
+          return;
+        }
+      }
+    }
+    // 2) Disk privat browser (OPFS)
+    if (!sink && HAS_OPFS && (plan.diskOk || !plan.canRam)) {
       try { sink = await openDiskSink(); } catch (err) { console.warn('OPFS tidak bisa dipakai:', err); }
     }
+    // 3) RAM, hanya untuk file kecil
     if (!sink) {
-      if (m.size > RAM_LIMIT) {
+      if (!plan.canRam) {
         pendingOffer = null;
         card.hideBar();
         card.sub('Gagal: penyimpanan browser tidak bisa dipakai untuk file sebesar ini');
@@ -614,9 +697,9 @@ async function onOffer(m) {
     if (c !== conn || !c.open) { sink.abort(); return; } // putus selama menyiapkan
 
     pendingOffer = null;
-    const inc = { name: m.name, size: m.size, got: 0, lastAck: 0, sink, card, t0: performance.now() };
+    const inc = { name: m.name, size: m.size, got: 0, lastAck: 0, sink, card, savedAs, t0: performance.now() };
     incoming = inc;
-    sink.onError = (why) => failIncoming(inc, why);
+    sink.onError = (why) => failIncoming(inc, /Quota/i.test(why) ? 'penyimpanan perangkat penuh' : why);
     sink.onWritten = (total) => {
       // Kabari pengirim tiap ~1 MB tertulis (dan di akhir)
       if (total - inc.lastAck >= 1024 * 1024 || total === inc.size) {
@@ -628,22 +711,25 @@ async function onOffer(m) {
     card.sub('Menerima… 0%');
     sendCtl(c, { type: 'accept' });
     updateAwake();
-  }, 'primary');
+  };
 
-  card.button('Tolak', () => {
+  const rejectHandler = () => {
     pendingOffer = null;
     card.clearButtons();
     card.hideBar();
     card.sub('Kamu menolak file ini');
     sendCtl(c, { type: 'reject', reason: 'ditolak oleh penerima' });
-  }, 'ghost');
+  };
+
+  card.button('Terima', acceptHandler, 'primary');
+  card.button('Tolak', rejectHandler, 'ghost');
 }
 
 /* ============================================================
    EVENT TOMBOL
    ============================================================ */
 $('limitInfo').textContent = HAS_OPFS
-  ? 'File besar didukung (GB pun bisa), selama ruang kosong di perangkat penerima cukup.'
+  ? 'File besar didukung (GB pun bisa), selama disk di perangkat penerima cukup.'
   : 'Browser ini hanya bisa menerima file sampai ' + fmtSize(RAM_LIMIT) + '.';
 
 $('btnCreate').onclick = createRoom;

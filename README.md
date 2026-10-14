@@ -210,7 +210,11 @@ Supaya file berukuran GB tidak membebani perangkat, aplikasi ini bekerja begini:
 - **Pengirim** membaca file per 1 MB langsung dari disk dan mengirimnya per 64 KB. File tidak pernah dimuat utuh ke RAM.
 - **Penerima** langsung menulis setiap potongan ke penyimpanan browser (Origin Private File System, lewat `writer.js`). Data tidak ditumpuk di RAM. Setelah selesai, tombol **Unduh** menyimpan file ke folder Download.
 - **Rem otomatis (flow control).** Penerima rutin melapor "sudah tertulis sekian MB". Pengirim berhenti kalau data yang belum dikonfirmasi lebih dari `WINDOW` (8 MB). Jadi kalau disk penerima lambat, pengirim ikut melambat dan tidak ada data yang menumpuk di memori.
-- **Cek ruang kosong.** Sebelum file diterima, browser penerima memeriksa sisa kuota penyimpanannya. Kalau tidak cukup, file ditolak otomatis dengan alasan yang jelas.
+- **Tiga jalur simpan, dipilih otomatis oleh penerima:**
+  1. **Simpan langsung ke folder pilihan** (Chrome/Edge di desktop). Muncul jendela "Simpan sebagai" saat menekan Terima. Dipakai untuk file 1 GB ke atas, atau kalau kuota browser kecil. Tidak kena kuota browser dan tidak butuh ruang dua kali lipat.
+  2. **Penyimpanan disk browser** (OPFS) untuk file biasa. Tombol Unduh muncul setelah selesai.
+  3. **RAM** hanya untuk file kecil (sampai 200 MB) kalau dua jalur di atas tidak bisa dipakai.
+- **Cek ruang kosong hanya perkiraan.** Browser tidak memberi angka pasti. Karena itu file tidak lagi ditolak hanya gara-gara perkiraan kecil. Penerima diberi peringatan dan boleh mencoba.
 - **Layar HP dijaga tetap menyala** selama transfer (Wake Lock), kalau browser mendukung.
 - Data dikirim sebagai biner mentah (`serialization: 'raw'`), tanpa pembungkus tambahan, jadi beban CPU lebih ringan.
 
@@ -218,8 +222,8 @@ Hasil tes lokal (dua browser di satu mesin, server signaling lokal): file 1 GB s
 
 **Yang perlu kamu tahu:**
 
-1. **Butuh ruang disk dua kali lipat sementara.** File ditulis dulu ke penyimpanan browser, lalu "Unduh" menyalinnya ke folder Download. Salinan sementara dihapus otomatis saat halaman dibuka lagi. Pastikan ruang kosong di perangkat penerima minimal 2 kali ukuran file.
-2. **Kuota penyimpanan tiap browser berbeda.** Chrome dan Edge biasanya lega. Safari dan mode private/incognito lebih ketat. Kalau tidak cukup, muncul pesan penolakan dan pengirim diberi tahu alasannya.
+1. **Di jalur penyimpanan browser, butuh ruang disk dua kali lipat sementara** (jalur "Simpan sebagai" di desktop tidak). File ditulis dulu ke penyimpanan browser, lalu "Unduh" menyalinnya ke folder Download. Salinan sementara dihapus otomatis saat halaman dibuka lagi. Pastikan ruang kosong di perangkat penerima minimal 2 kali ukuran file.
+2. **Kuota penyimpanan tiap browser berbeda.** Chrome dan Edge biasanya lega. Safari dan mode private/incognito lebih ketat. Angka kuota yang dilaporkan browser sering lebih kecil dari kenyataan, jadi aplikasi tetap mencoba. Kalau penyimpanan benar-benar penuh, transfer berhenti dengan pesan "penyimpanan perangkat penuh".
 3. **Browser tanpa dukungan penyimpanan disk** (browser lama, sebagian mode private) otomatis memakai RAM dengan batas 200 MB. Pengirim akan melihat pesan "Ditolak: browser penerima hanya mendukung file sampai 200 MB".
 4. **Jangan lewat TURN untuk file besar.** Kalau koneksi langsung gagal dan harus lewat relay TURN gratis, beberapa GB akan menghabiskan kuota. File besar sebaiknya hanya dikirim saat koneksi langsung berhasil (WiFi yang sama atau jaringan yang tidak terlalu ketat).
 5. **Kecepatan mengikuti jaringan.** Di internet, batasnya adalah kecepatan upload pengirim. Di WiFi yang sama biasanya jauh lebih cepat. Angka kecepatan tampil di kartu transfer.
@@ -235,7 +239,8 @@ Hasil tes lokal (dua browser di satu mesin, server signaling lokal): file 1 GB s
 | Status "Menghubungkan…" lama sekali | Jaringan salah satu pihak memblokir koneksi langsung. Coba langkah 8 (TURN), atau pindah jaringan. |
 | "Gagal menghubungi server signaling" | PeerJS Cloud sedang sibuk atau diblokir jaringan. Coba lagi nanti. Kalau sering terjadi, ganti ke signaling Supabase Realtime. |
 | Tombol Salin tidak bekerja di HP | Penyalinan otomatis butuh HTTPS. Di alamat online (Vercel/Netlify) sudah aman. Kalau tidak tersedia, muncul kotak untuk salin manual. |
-| "Ditolak: ruang penyimpanan browser penerima tidak cukup" | Ruang kosong atau kuota browser penerima kurang. Kosongkan disk, atau pakai Chrome/Edge di desktop. |
+| "Gagal: penyimpanan perangkat penuh" | Disk penerima benar-benar penuh di tengah transfer. Kosongkan ruang (minimal sebesar file), lalu kirim ulang. Di desktop Chrome/Edge, pilih lokasi simpan di disk yang lebih lega. |
+| Muncul peringatan "Perkiraan ruang kosong browser … mungkin tidak cukup" | Itu hanya perkiraan browser dan sering terlalu kecil. Tekan Terima untuk mencoba. Kalau disk memang cukup, transfer jalan normal. |
 | "Ditolak: browser penerima hanya mendukung file sampai 200 MB" | Browser penerima tidak mendukung penyimpanan disk (browser lama atau mode private). Minta penerima memakai Chrome, Edge, Firefox, atau Safari terbaru di jendela biasa. |
 | Setelah transfer file besar, ruang disk terasa berkurang | Ada salinan sementara di penyimpanan browser. Buka ulang halaman website ini, salinannya dihapus otomatis. |
 | Transfer berhenti di tengah | Tab ditutup, HP masuk mode tidur, atau koneksi putus. Kirim ulang. |
