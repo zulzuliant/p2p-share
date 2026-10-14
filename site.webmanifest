@@ -1,0 +1,15 @@
+{
+  "name": "P2P Share",
+  "short_name": "P2P Share",
+  "description": "Kirim file langsung antar browser. File tidak diupload ke server.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#E9EEF8",
+  "theme_color": "#0A74F5",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

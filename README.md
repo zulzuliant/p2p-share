@@ -2,6 +2,8 @@
 
 Website kirim file langsung antar browser (peer-to-peer). File **tidak diupload ke server**, data mengalir langsung dari browser pengirim ke browser penerima lewat WebRTC.
 
+**Tampilan Glassmorphism ala Apple**, dengan mode terang dan gelap yang otomatis mengikuti pengaturan perangkat.
+
 **File besar (sampai GB) didukung.** Penerima menulis data langsung ke disk, bukan menumpuknya di RAM, jadi perangkat tidak terbebani. Penjelasan ada di bagian "File besar: cara kerja dan batasnya".
 
 Semua yang dipakai gratis:
@@ -15,7 +17,7 @@ Semua yang dipakai gratis:
 | STUN | `stun.l.google.com:19302` |
 | TURN (cadangan) | Metered Open Relay (opsional, langkah 8) |
 
-> Tidak perlu install Node.js, tidak ada build, tidak ada database. Ini hanya file statis: `index.html`, `style.css`, `app.js` (+ `writer.js` dan `peerjs.min.js`).
+> Tidak perlu install Node.js, tidak ada build, tidak ada database. Ini hanya file statis: `index.html`, `style.css`, `app.js` (+ `writer.js`, `peerjs.min.js`, dan `qrcode.js`).
 
 ---
 
@@ -24,10 +26,16 @@ Semua yang dipakai gratis:
 ```
 p2p-share/
 ├── index.html      Tampilan halaman
-├── style.css       Gaya tampilan (otomatis light/dark)
+├── style.css       Gaya Glassmorphism (otomatis terang/gelap)
 ├── app.js          Logika: buat room, gabung, kirim, terima
 ├── writer.js       Worker yang menulis file yang diterima langsung ke disk
 ├── peerjs.min.js   Library PeerJS 1.5.4 (disimpan lokal, tanpa CDN)
+├── qrcode.js       Library pembuat QR code (qrcode-generator 1.4.4, MIT, lokal)
+├── favicon.svg     Ikon tab browser (utama)
+├── favicon.ico     Ikon tab untuk browser lama (16 dan 32 px)
+├── apple-touch-icon.png   Ikon saat halaman ditambahkan ke layar utama iPhone/iPad
+├── icon-192.png, icon-512.png, icon-maskable-512.png   Ikon aplikasi (Android, PWA)
+├── site.webmanifest   Nama dan ikon aplikasi kalau dipasang ke layar utama
 └── README.md       Panduan ini
 ```
 
@@ -160,6 +168,29 @@ Semua pengaturan ada di bagian atas `app.js`:
 | `ROOM_PREFIX` | Awalan ID di server PeerJS | `p2pshare-` |
 
 Ganti `ROOM_PREFIX` dengan awalan unik milikmu (misalnya `zul-share-`) supaya tidak bentrok dengan proyek lain di server publik.
+
+### Langkah 10: Ubah tampilan (opsional)
+
+Semua warna ada di bagian paling atas `style.css`, dalam variabel `:root` (mode terang) dan blok `@media (prefers-color-scheme: dark)` (mode gelap). Beberapa yang paling sering diubah:
+
+| Variabel | Fungsi |
+|---|---|
+| `--accent` | Warna tombol utama dan progress bar |
+| `--b1` sampai `--b5` | Warna bercak latar di belakang kaca (dan `--b1o` sampai `--b5o` untuk kepekatannya) |
+| `--glass-bg` | Seberapa bening panel kaca. Naikkan angka terakhirnya (misalnya `0.58` jadi `0.8`) supaya lebih pekat dan lebih mudah dibaca |
+| `--bg` | Warna dasar halaman |
+
+Efek blur butuh browser modern. Kalau browser tidak mendukung, atau pengguna mengaktifkan "kurangi transparansi" di pengaturan perangkat, panel otomatis memakai warna solid, jadi tulisan tetap terbaca. Supaya perangkat tidak terbebani, bercak latar dibuat dengan gradien (bukan filter blur), dan **selama transfer berlangsung blur kaca dimatikan otomatis** (panel jadi sedikit lebih pekat, lalu kembali normal setelah selesai). Di lingkungan tes tanpa GPU, efek blur penuh membuat transfer sekitar 2 sampai 3 kali lebih lambat, dan setelah dua langkah ini kecepatan kembali normal. Kalau tetap terasa berat di HP lama, ubah `--glass-bg` jadi lebih pekat dan hapus `backdrop-filter` di bagian "KACA" pada `style.css`.
+
+### QR code untuk gabung room
+
+Setelah membuat room, halaman menampilkan QR code di bawah kode room. Teman cukup scan dengan kamera HP, lalu browser terbuka di link `?room=KODE` dan langsung masuk ke room itu tanpa mengetik apa pun. QR hilang saat teman sudah terhubung, dan muncul lagi kalau dia keluar.
+
+QR berisi alamat website kamu. Jadi di `localhost` QR tidak berguna untuk HP (muncul peringatan kuning), karena HP tidak bisa membuka `localhost` komputermu. Setelah deploy ke Vercel atau Netlify, QR langsung berfungsi. Kamera HP biasa sudah cukup, tidak perlu aplikasi khusus.
+
+### Ikon tab browser
+
+Browser memakai `favicon.svg` (atau `favicon.ico` untuk browser lama). Kalau kamu mengganti ikon, ganti kelima file ikonnya dengan ukuran yang sama: `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` (180 px), `icon-192.png`, `icon-512.png`, dan `icon-maskable-512.png`. Setelah deploy, ikon lama kadang masih tampil karena disimpan browser. Muat ulang paksa (Ctrl+Shift+R) atau tutup dan buka lagi tab-nya.
 
 ---
 

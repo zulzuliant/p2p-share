@@ -1,88 +1,113 @@
 <!doctype html>
-<html lang="id" data-theme="light">
+<html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#E9EEF8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0A0B14" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Kirim file langsung antar browser. File tidak diupload ke server.">
   <title>P2P Share</title>
+
+  <!-- Ikon tab browser -->
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
-<body>
-  <!-- Animasi Background Mesh Gradient -->
-  <div class="bg-shapes">
-    <div class="shape shape-1"></div>
-    <div class="shape shape-2"></div>
-    <div class="shape shape-3"></div>
+<body data-view="home">
+  <!-- Latar bercak warna (di-blur) supaya efek kaca terlihat -->
+  <div class="bg" aria-hidden="true">
+    <span class="blob b1"></span>
+    <span class="blob b2"></span>
+    <span class="blob b3"></span>
+    <span class="blob b4"></span>
+    <span class="blob b5"></span>
   </div>
 
   <main>
     <header>
-      <div class="header-top row between align-center">
-        <h1>P2P Share</h1>
-        <!-- Tombol Toggle Tema -->
-        <button id="themeToggle" class="btn-icon" aria-label="Toggle Theme">
-          <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-          <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        </button>
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h15m0 0-4-4m4 4-4 4"/><path d="M20 16H5m0 0 4-4m-4 4 4 4"/>
+        </svg>
       </div>
-      <p>Kirim file langsung antar browser. Tanpa server perantara.</p>
+      <h1>P2P Share</h1>
+      <p>Kirim file langsung antar browser. File tidak diupload ke server.</p>
     </header>
 
     <!-- Halaman awal -->
     <section id="home" class="stack">
-      <div class="card glass">
-        <h2>Buat room</h2>
-        <p>Kamu dapat kode 6 karakter. Bagikan ke teman supaya dia bisa gabung.</p>
-        <button id="btnCreate" class="primary w-100">Buat Room</button>
+      <div class="card stack-sm">
+        <div>
+          <h2>Buat room</h2>
+          <p class="muted">Kamu dapat kode 6 karakter. Bagikan ke teman supaya dia bisa gabung.</p>
+        </div>
+        <button id="btnCreate" class="primary">Buat room</button>
       </div>
 
-      <div class="card glass">
-        <h2>Gabung room</h2>
-        <p>Masukkan kode room dari temanmu.</p>
-        <form id="joinForm" class="row">
+      <div class="card stack-sm">
+        <div>
+          <h2>Gabung room</h2>
+          <p class="muted">Masukkan kode room dari temanmu.</p>
+        </div>
+        <form id="joinForm" class="row nowrap">
+          <label for="joinCode" class="sr">Kode room</label>
           <input id="joinCode" maxlength="6" placeholder="KODE" autocomplete="off"
-                 autocapitalize="characters" spellcheck="false" aria-label="Kode room">
+                 autocapitalize="characters" spellcheck="false">
           <button class="primary">Gabung</button>
         </form>
       </div>
 
-      <p id="homeMsg" class="msg" hidden></p>
+      <p id="homeMsg" class="msg" role="alert" hidden></p>
+
+      <ul class="chips">
+        <li>Tanpa upload ke server</li>
+        <li>Terenkripsi (DTLS)</li>
+        <li>File besar sampai GB</li>
+      </ul>
     </section>
 
     <!-- Halaman room -->
-    <section id="room" class="stack" hidden>
-      <div class="card glass">
-        <div class="row between align-center">
-          <span class="label">Status Koneksi</span>
-          <span id="status" class="status wait">Menyiapkan…</span>
+    <section id="room" hidden>
+      <div class="card room-card">
+        <div class="row between">
+          <span class="label">Kode room</span>
+          <span id="status" class="status wait" role="status">Menyiapkan…</span>
         </div>
-        
-        <div class="code-container">
-          <span class="label">Room Code</span>
-          <div id="roomCode" class="code">------</div>
-          
-          <!-- Tempat QR Code Muncul -->
-          <div id="qrCodeContainer" class="qr-box"></div>
+        <div id="roomCode" class="code">------</div>
+        <div id="qrBox" class="qr-box" hidden>
+          <div id="qr" class="qr" role="img" aria-label="QR code untuk gabung ke room ini"></div>
+          <small>Scan dengan kamera HP untuk langsung gabung</small>
+          <small id="qrWarn" class="qr-warn" hidden>Alamat ini hanya bisa dibuka di komputer ini. Deploy dulu supaya HP bisa scan.</small>
         </div>
-
-        <div class="row actions-row">
-          <button id="btnCopyCode" class="btn-glass">Salin Kode</button>
-          <button id="btnCopyLink" class="btn-glass">Bagikan Link</button>
-          <button id="btnLeave" class="btn-glass danger">Keluar</button>
+        <div class="row">
+          <button id="btnCopyCode">Salin kode</button>
+          <button id="btnCopyLink">Salin link</button>
+          <button id="btnLeave" class="ghost push">Keluar</button>
         </div>
       </div>
 
-      <div id="sendBox" class="card glass" hidden>
-        <label id="drop" class="drop glass-inset">
+      <div id="sendBox" class="card pad-sm" hidden>
+        <label id="drop" class="drop">
           <input id="fileInput" type="file" multiple hidden>
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          <strong>Kirim File</strong>
-          <span>Pilih file atau seret file ke sini</span>
+          <span class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+            </svg>
+          </span>
+          <span class="drop-title"><strong>Pilih file</strong> atau seret file ke sini</span>
           <small id="limitInfo"></small>
+          <small>Kedua pihak bisa saling kirim.</small>
         </label>
       </div>
 
-      <div id="transfers" class="stack"></div>
+      <div id="transferWrap" hidden>
+        <h2>Transfer</h2>
+        <div id="transfers"></div>
+      </div>
     </section>
 
     <footer>
@@ -91,6 +116,7 @@
   </main>
 
   <script src="peerjs.min.js"></script>
+  <script src="qrcode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

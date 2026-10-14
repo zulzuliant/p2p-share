@@ -10,29 +10,11 @@ const RAM_LIMIT = 200 * 1024 * 1024; // batas kalau browser penerima terpaksa pa
 const ROOM_PREFIX = 'p2pshare-';    // supaya ID tidak bentrok di server PeerJS publik
 
 const PEER_OPTIONS = {
-  secure: true, // Wajib true agar stabil di HTTPS
   config: {
     iceServers: [
-      // 1. STUN Servers (Untuk WiFi biasa)
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      
-      // 2. TURN Servers (Wajib untuk menembus Data Seluler / Jaringan Ketat)
-      {
-        urls: 'turn:openrelay.metered.ca:80',
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-      },
-      {
-        urls: 'turn:openrelay.metered.ca:443',
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-      },
-      {
-        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-      }
+      // TURN (cadangan kalau koneksi langsung gagal). Isi di README langkah 8, lalu hapus tanda //
+      // { urls: 'turn:NAMA-SERVER-TURN:80', username: 'USERNAME', credential: 'PASSWORD' },
     ],
   },
 };
@@ -99,6 +81,7 @@ function sendCtl(c, msg) {
 let wakeLock = null;
 async function updateAwake() {
   const need = sending || !!incoming;
+  document.body.classList.toggle('busy', need); // CSS: mode hemat (tanpa blur) saat transfer
   try {
     if (need && !wakeLock && navigator.wakeLock) {
       wakeLock = await navigator.wakeLock.request('screen');
@@ -140,6 +123,7 @@ let abortReason = '';      // alasan kalau penerima membatalkan di tengah jalan
 function show(view) {
   $('home').hidden = view !== 'home';
   $('room').hidden = view !== 'room';
+  document.body.dataset.view = view; // dipakai CSS untuk mengatur tampilan per halaman
 }
 
 function setStatus(text, kind) {
@@ -154,39 +138,77 @@ function homeMessage(text) {
   m.hidden = !text;
 }
 
+// Ikon kartu transfer: dokumen (berjalan/menunggu), centang (selesai), silang (gagal/ditolak).
+// String konstan buatan sendiri, bukan dari data pengguna, jadi aman dipakai di innerHTML.
+const CARD_ICONS =
+  '<svg class="ic-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>' +
+  '<svg class="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>' +
+  '<svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+
 // Kartu transfer (satu kartu = satu file). Pakai textContent supaya aman dari XSS.
+// Status kartu (data-state): send = berjalan, offer = menunggu dijawab, done = selesai, fail = gagal/ditolak.
 function makeCard(title, sub) {
   const el = document.createElement('div');
-  el.className = 'card glass transfer';
+  el.className = 'card transfer';
+  el.dataset.state = 'send';
+
+  const icon = document.createElement('div');
+  icon.className = 't-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = CARD_ICONS;
   const t = document.createElement('div');
   t.className = 't-title';
   t.textContent = title;
   const s = document.createElement('div');
   s.className = 't-sub';
   s.textContent = sub;
+  const text = document.createElement('div');
+  text.className = 't-text';
+  text.append(t, s);
+  const head = document.createElement('div');
+  head.className = 't-head';
+  head.append(icon, text);
+
   const bar = document.createElement('div');
   bar.className = 'bar';
+  bar.setAttribute('role', 'progressbar');
+  bar.setAttribute('aria-label', 'Progres ' + title);
+  bar.setAttribute('aria-valuemin', '0');
+  bar.setAttribute('aria-valuemax', '100');
+  bar.setAttribute('aria-valuenow', '0');
   const fill = document.createElement('div');
   bar.appendChild(fill);
   const actions = document.createElement('div');
-  actions.className = 'row';
-  el.append(t, s, bar, actions);
+  actions.className = 'row actions';
+  el.append(head, bar, actions);
+
+  $('transferWrap').hidden = false;
+  $('room').classList.add('has-transfers');
   $('transfers').prepend(el);
 
   let lastPct = -1;
+  let lastPaint = 0;
+  const setPct = (pct) => {
+    fill.style.width = pct + '%';
+    bar.setAttribute('aria-valuenow', String(pct));
+  };
   return {
     sub: (text) => (s.textContent = text),
-    progress: (p) => (fill.style.width = Math.round(p * 100) + '%'),
+    state: (name) => (el.dataset.state = name),
+    progress: (p) => setPct(Math.round(p * 100)),
     // Update tampilan hanya kalau persennya berubah (hemat CPU), sekalian tampilkan kecepatan
     report(label, done, total, t0) {
       const pct = Math.floor((done / total) * 100);
       if (pct === lastPct) return;
+      const now = performance.now();
+      if (pct < 100 && now - lastPaint < 200) return; // maksimal ~5 kali update per detik
       lastPct = pct;
-      fill.style.width = pct + '%';
+      lastPaint = now;
+      setPct(pct);
       const speed = done / Math.max((performance.now() - t0) / 1000, 0.001);
       s.textContent = `${label}… ${pct}% · ${fmtSize(speed)}/s`;
     },
-    hideBar: () => (bar.hidden = true),
+    hideBar() { bar.hidden = true; el.dataset.state = 'fail'; },
     clearButtons: () => actions.replaceChildren(),
     button(label, onClick, cls = '') {
       const b = document.createElement('button');
@@ -196,6 +218,7 @@ function makeCard(title, sub) {
       actions.appendChild(b);
     },
     link(label, href, filename) {
+      el.dataset.state = 'done';
       const a = document.createElement('a');
       a.textContent = label;
       a.href = href;
@@ -213,22 +236,29 @@ function openRoomView(code) {
   $('roomCode').textContent = code;
   $('sendBox').hidden = true;
   $('transfers').replaceChildren();
-  
-  // Generate QR Code / Barcode otomatis
-  const qrContainer = $('qrCodeContainer');
-  if (qrContainer) {
-    qrContainer.innerHTML = ''; // Bersihkan QR sebelumnya jika ada
-    new QRCode(qrContainer, {
-      text: roomLink(code), // Link yang akan discan
-      width: 150,
-      height: 150,
-      colorDark : "#000000",
-      colorLight : "#ffffff",
-      correctLevel : QRCode.CorrectLevel.M
-    });
-  }
-
+  $('transferWrap').hidden = true;
+  $('room').classList.remove('has-transfers');
+  showQr(isHost);
   show('room');
+}
+
+function showQr(on) {
+  const box = $('qrBox');
+  box.hidden = !on;
+  if (!on) return;
+  const link = roomLink($('roomCode').textContent);
+  try {
+    const qr = qrcode(0, 'M');   // 0 = ukuran otomatis
+    qr.addData(link);
+    qr.make();
+    $('qr').innerHTML = qr.createSvgTag({ scalable: true, margin: 0 });
+  } catch (e) {
+    console.error(e);
+    box.hidden = true;
+    return;
+  }
+  // localhost / IP lokal tidak bisa dibuka dari HP lain
+  $('qrWarn').hidden = !/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname);
 }
 
 function roomLink(code) {
@@ -309,6 +339,7 @@ function setupConn(c) {
     if (c !== conn) return;
     setStatus('Terhubung langsung (P2P)', 'ok');
     $('sendBox').hidden = false;
+    showQr(false);
   };
   if (c.open) opened(); else c.on('open', opened);
 
@@ -332,7 +363,7 @@ function onDisconnect() {
   wakeUp();
   updateAwake();
 
-  if (isHost) setStatus('Teman keluar. Menunggu gabung lagi…', 'wait');
+  if (isHost) { setStatus('Teman keluar. Menunggu gabung lagi…', 'wait'); showQr(true); }
   else setStatus('Koneksi terputus', 'err');
 }
 
@@ -431,6 +462,7 @@ async function sendOne(file) {
   const card = makeCard(file.name, fmtSize(file.size));
   const fail = (why) => { card.hideBar(); card.sub('Gagal: ' + why); };
 
+  card.state('offer');
   card.sub('Menunggu teman menerima…');
   sendCtl(c, { type: 'meta', name: file.name, size: file.size, mime: file.type });
 
@@ -438,6 +470,7 @@ async function sendOne(file) {
   answerResolver = null;
   if (!answer.ok) { card.hideBar(); card.sub('Ditolak: ' + (answer.reason || 'teman menolak file ini')); return; }
 
+  card.state('send');
   acked = 0;
   abortReason = '';
   if (c.dataChannel) {
@@ -474,6 +507,7 @@ async function sendOne(file) {
   if (acked < file.size) return fail('koneksi terputus sebelum penerima selesai');
 
   card.progress(1);
+  card.state('done');
   card.sub('Terkirim · ' + fmtSize(file.size));
 }
 
@@ -547,6 +581,7 @@ async function onOffer(m) {
   if (incoming || pendingOffer) return sendCtl(c, { type: 'reject', reason: 'teman sedang menerima file lain' });
 
   const card = makeCard(m.name, 'Teman ingin mengirim file · ' + fmtSize(m.size));
+  card.state('offer');
   pendingOffer = card; // tandai dulu supaya tawaran lain tidak menyelip selama pengecekan
 
   const reason = await checkSpace(m.size);
@@ -589,6 +624,7 @@ async function onOffer(m) {
         sendCtl(conn, { type: 'ack', n: total });
       }
     };
+    card.state('send');
     card.sub('Menerima… 0%');
     sendCtl(c, { type: 'accept' });
     updateAwake();
@@ -614,26 +650,7 @@ $('btnCreate').onclick = createRoom;
 $('joinForm').onsubmit = (e) => { e.preventDefault(); joinRoom($('joinCode').value); };
 $('btnLeave').onclick = leave;
 $('btnCopyCode').onclick = (e) => copyText($('roomCode').textContent, e.target);
-$('btnCopyLink').onclick = async (e) => {
-  const url = roomLink($('roomCode').textContent);
-  
-  // Gunakan Native Share API (jika di HP akan langsung buka pilihan WA, IG, Telegram, dll)
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title: 'P2P Share Room',
-        text: 'Ayo gabung ke room P2P Share untuk kirim file secara langsung!',
-        url: url
-      });
-    } catch (err) {
-      // Abaikan jika user membatalkan popup share
-      console.log('Share dibatalkan', err);
-    }
-  } else {
-    // Fallback jika dibuka di Laptop / PC biasa
-    copyText(url, e.target);
-  }
-};
+$('btnCopyLink').onclick = (e) => copyText(roomLink($('roomCode').textContent), e.target);
 
 const fileInput = $('fileInput');
 fileInput.onchange = () => {
@@ -657,34 +674,3 @@ cleanupStorage();
 // Buka link ...?room=KODE -> langsung gabung
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam) joinRoom(roomParam);
-
-
-/* ============================================================
-   THEME TOGGLE (DARK/LIGHT MODE)
-   ============================================================ */
-const themeToggleBtn = document.getElementById('themeToggle');
-const iconSun = document.getElementById('icon-sun');
-const iconMoon = document.getElementById('icon-moon');
-
-function setTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('theme', theme);
-  if (theme === 'dark') {
-    iconSun.hidden = false;
-    iconMoon.hidden = true;
-  } else {
-    iconSun.hidden = true;
-    iconMoon.hidden = false;
-  }
-}
-
-// Cek preferensi tema saat halaman dimuat (dari local storage atau settingan OS sistem)
-const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-setTheme(savedTheme);
-
-if (themeToggleBtn) {
-  themeToggleBtn.onclick = () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    setTheme(currentTheme === 'dark' ? 'light' : 'dark');
-  };
-}
