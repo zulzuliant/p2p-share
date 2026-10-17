@@ -43,13 +43,13 @@ p2p-share/
 
 ## Cara pakai (dari sisi pengguna)
 
-1. Orang A buka website, klik **Buat room**, muncul kode 6 karakter.
-2. A kirim kode (atau tombol **Salin link**) ke B lewat WhatsApp.
-3. B buka website dan masukkan kode, atau langsung buka link-nya.
-4. Status berubah jadi **Terhubung langsung (P2P)**.
-5. Salah satu pilih file. Pihak lain klik **Terima**, lalu file berpindah dan muncul tombol **Unduh**.
+1. Orang A buka website, klik **Buat room**. Muncul kode 6 karakter dan QR code.
+2. A membagikan kode, link (**Salin link**), atau QR ke B, C, D, dan seterusnya.
+3. Mereka masukkan kode, buka link, atau scan QR dengan kamera HP. Masuk otomatis ke room A.
+4. Status berubah jadi **Terhubung · N orang**, dan daftar **Peserta** tampil di kartu room.
+5. Siapa saja pilih file. File dikirim ke **semua peserta lain**. Tiap penerima klik **Terima** sendiri-sendiri, jadi penerima yang menolak tidak mengganggu yang lain.
 
-Kedua pihak bisa saling kirim file. Satu room untuk satu teman.
+Satu room maksimal **6 orang** (termasuk A). Kode dan QR di A tetap tampil selama room belum penuh, jadi peserta baru bisa masuk kapan saja. Semua peserta saling terhubung langsung, jadi kalau A menutup halamannya, peserta yang sudah ada masih bisa saling kirim file. Hanya peserta baru yang tidak bisa masuk lagi.
 
 ---
 
@@ -88,7 +88,7 @@ Buka **http://localhost:8000** di browser.
 
 1. Di tab pertama klik **Buat room**, catat kodenya.
 2. Buka tab kedua ke `http://localhost:8000`, isi kode, klik **Gabung**.
-3. Di kedua tab status harus berubah menjadi **Terhubung langsung (P2P)**.
+3. Di kedua tab status harus berubah menjadi **Terhubung · 2 orang**.
 4. Di tab pertama pilih file kecil. Di tab kedua klik **Terima**, lalu **Unduh**.
 5. Coba juga file besar (misalnya 500 MB sampai 1 GB). Selama transfer buka Task Manager (Windows) atau Activity Monitor (Mac): pemakaian memori tab penerima harus tetap kecil, tidak naik sebesar ukuran file.
 
@@ -196,10 +196,11 @@ Browser memakai `favicon.svg` (atau `favicon.ico` untuk browser lama). Kalau kam
 
 ## Cara kerja singkat
 
-1. **Buat room**: browser pendaftar ke PeerJS Cloud dengan ID `p2pshare-KODE`.
-2. **Gabung**: browser teman meminta tersambung ke ID itu. PeerJS Cloud hanya jadi perantara perkenalan (signaling).
-3. STUN membantu kedua browser menemukan alamat satu sama lain, lalu **koneksi WebRTC langsung terbentuk**. Server signaling tidak lagi dilewati.
-4. Kirim file: pesan `meta` (nama dan ukuran) → penerima klik Terima → file dikirim per potongan 16 KB (`chunk`) → pesan `done` → penerima menyusun ulang dan menyediakan tombol Unduh.
+1. **Buat room**: browser A mendaftar ke PeerJS Cloud dengan ID `p2pshare-KODE`.
+2. **Gabung**: browser B meminta tersambung ke ID itu. PeerJS Cloud hanya jadi perantara perkenalan (signaling).
+3. STUN membantu browser menemukan alamat satu sama lain, lalu **koneksi WebRTC langsung terbentuk**. Server signaling tidak lagi dilewati.
+4. **Banyak peserta (mesh).** A memberi B daftar peserta lain, lalu B menyambung langsung ke tiap peserta itu. Hasilnya semua peserta saling tersambung langsung. Jumlah koneksi bertambah cepat (6 orang = 15 koneksi), itu alasan batasnya 6.
+5. Kirim file: pesan `meta` (nama dan ukuran) → penerima klik Terima → file dikirim per potongan 64 KB → pesan `done` → penerima menyimpan dan menyediakan tombol Unduh. Kalau dikirim ke 5 orang, pengirim mengirim 5 kali sekaligus, jadi upload pengirim terbagi rata. Untuk file besar ke banyak orang, kecepatan per orang akan lebih lambat.
 
 ---
 

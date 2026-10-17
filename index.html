@@ -43,7 +43,7 @@
       <div class="card stack-sm">
         <div>
           <h2>Buat room</h2>
-          <p class="muted">Kamu dapat kode 6 karakter. Bagikan ke teman supaya dia bisa gabung.</p>
+          <p class="muted">Kamu dapat kode 6 karakter dan QR. Bagikan ke teman, sampai 6 orang bisa gabung di satu room.</p>
         </div>
         <button id="btnCreate" class="primary">Buat room</button>
       </div>
@@ -83,6 +83,11 @@
           <small>Scan dengan kamera HP untuk langsung gabung</small>
           <small id="qrWarn" class="qr-warn" hidden>Alamat ini hanya bisa dibuka di komputer ini. Deploy dulu supaya HP bisa scan.</small>
         </div>
+        <p id="roomFull" class="msg" hidden></p>
+        <div id="peersBox" class="peers-box" hidden>
+          <span id="peersTitle" class="label">Peserta</span>
+          <ul id="peers" class="peers"></ul>
+        </div>
         <div class="row">
           <button id="btnCopyCode">Salin kode</button>
           <button id="btnCopyLink">Salin link</button>
@@ -100,7 +105,7 @@
           </span>
           <span class="drop-title"><strong>Pilih file</strong> atau seret file ke sini</span>
           <small id="limitInfo"></small>
-          <small>Kedua pihak bisa saling kirim.</small>
+          <small>File dikirim ke semua peserta di room. Siapa saja bisa mengirim.</small>
         </label>
       </div>
 

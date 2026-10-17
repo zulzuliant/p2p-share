@@ -356,6 +356,18 @@ button.ghost { background: transparent; border-color: transparent; box-shadow: n
   box-shadow: 0 6px 24px rgba(0,0,0,.12);
 }
 .qr svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.qr-box.compact .qr { width: 128px; height: 128px; padding: 10px; border-radius: 14px; }
+.qr-box.compact { padding-bottom: 12px; }
+
+.peers-box { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 14px; }
+.peers { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.peers li {
+  padding: 6px 12px; border-radius: 999px;
+  font-size: 0.8125rem; font-weight: 500;
+  color: var(--chip-text); background: var(--chip-bg);
+}
+.peers li.me { color: var(--drop-icon); }
+
 .qr-warn { color: var(--wait-text) !important; max-width: 260px; }
 
 .drop {
@@ -430,3 +442,4 @@ body.busy .bar > div { transition: none; }
   .card.pad-sm { padding: 12px; }
   .drop { padding: 28px 14px; }
 }
+#roomFull { color: var(--wait-text); text-align: center; font-weight: 500; padding-bottom: 12px; }

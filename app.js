@@ -61,19 +61,19 @@ async function copyText(text, btn) {
 
 // Pengirim menunggu EVENT (ack dari penerima / antrean kirim kosong), bukan timer polling.
 // Timer di tab yang tidak aktif dibatasi browser (bisa 1x per detik), event tidak.
-let wakeSender = null;
-function wakeUp() {
-  if (wakeSender) wakeSender();
+// Tiap peserta (link) punya "bangunan" sendiri supaya beberapa pengiriman paralel tidak saling ganggu.
+function wakeUp(link) {
+  if (link && link.wake) link.wake();
 }
-function waitWake() {
+function waitWake(link) {
   return new Promise((resolve) => {
     const t = setTimeout(done, 1000); // jaring pengaman saja
     function done() {
       clearTimeout(t);
-      if (wakeSender === done) wakeSender = null;
+      if (link.wake === done) link.wake = null;
       resolve();
     }
-    wakeSender = done;
+    link.wake = done;
   });
 }
 
@@ -85,7 +85,7 @@ function sendCtl(c, msg) {
 // Cegah layar HP mati selama transfer
 let wakeLock = null;
 async function updateAwake() {
-  const need = sending || !!incoming;
+  const need = [...links.values()].some((l) => l.active > 0 || l.incoming);
   document.body.classList.toggle('busy', need); // CSS: mode hemat (tanpa blur) saat transfer
   try {
     if (need && !wakeLock && navigator.wakeLock) {
@@ -112,15 +112,29 @@ async function cleanupStorage() {
 /* ============================================================
    STATE
    ============================================================ */
+const MAX_PEERS = 6;       // total orang di satu room, termasuk pembuat room
+const links = new Map();   // id peserta -> status koneksi ke peserta itu (satu room banyak peserta)
 let peer = null;           // koneksi ke server signaling PeerJS
-let conn = null;           // koneksi P2P ke teman
 let isHost = false;        // true = yang membuat room
-let sending = false;       // sedang mengirim file?
-let answerResolver = null; // menunggu jawaban Terima/Tolak dari penerima
-let pendingOffer = null;   // kartu tawaran file yang belum dijawab
-let incoming = null;       // file yang sedang diterima
-let acked = 0;             // jumlah byte yang sudah dikonfirmasi ditulis oleh penerima
-let abortReason = '';      // alasan kalau penerima membatalkan di tengah jalan
+let hostId = '';           // ID PeerJS milik pembuat room
+let everConnected = false; // sudah pernah tersambung ke seseorang di room ini?
+const myName = 'Peserta-' + makeCode().slice(0, 3); // nama acak, ditampilkan ke peserta lain
+
+function newLink(c) {
+  return {
+    id: c.peer, conn: c, name: '',
+    answerResolver: null,  // menunggu jawaban Terima/Tolak dari penerima
+    pendingOffer: null,    // kartu tawaran file yang belum dijawab
+    incoming: null,        // file yang sedang diterima dari peserta ini
+    acked: 0,              // byte yang sudah dikonfirmasi ditulis oleh penerima
+    abortReason: '',       // alasan kalau penerima membatalkan di tengah jalan
+    queue: Promise.resolve(), // antrean file yang dikirim ke peserta ini
+    active: 0,             // jumlah file yang sedang/akan dikirim ke peserta ini
+    wake: null,
+  };
+}
+const openLinks = () => [...links.values()].filter((l) => l.conn.open);
+const nameOf = (l) => l.name || 'teman';
 
 /* ============================================================
    TAMPILAN
@@ -240,12 +254,46 @@ function makeCard(title, sub) {
    ============================================================ */
 function openRoomView(code) {
   $('roomCode').textContent = code;
-  $('sendBox').hidden = true;
   $('transfers').replaceChildren();
   $('transferWrap').hidden = true;
   $('room').classList.remove('has-transfers');
-  showQr(isHost);
+  everConnected = false;
   show('room');
+  refreshRoom();
+}
+
+// Satu fungsi yang menyegarkan semua tampilan room dari daftar peserta saat ini
+function refreshRoom() {
+  const others = openLinks();
+  const total = others.length + 1;
+  if (others.length) everConnected = true;
+
+  if (others.length) setStatus('Terhubung · ' + total + ' orang', 'ok');
+  else if (isHost) setStatus('Menunggu teman gabung…', 'wait');
+  else if (everConnected) setStatus('Koneksi terputus', 'err');
+  else setStatus('Menghubungkan…', 'wait');
+
+  $('sendBox').hidden = others.length === 0;
+
+  $('peersBox').hidden = others.length === 0;
+  $('peersTitle').textContent = 'Peserta (' + total + '/' + MAX_PEERS + ')';
+  const ul = $('peers');
+  ul.replaceChildren();
+  const add = (text, cls) => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    if (cls) li.className = cls;
+    ul.appendChild(li);
+  };
+  add('Kamu · ' + myName + (isHost ? ' · Host' : ''), 'me');
+  for (const l of others) add(nameOf(l) + (!isHost && l.id === hostId ? ' · Host' : ''));
+
+  // Kode dan QR tetap tampil di pembuat room selama masih ada tempat
+  const full = total >= MAX_PEERS;
+  showQr(isHost && !full);
+  $('qrBox').classList.toggle('compact', others.length > 0);
+  $('roomFull').hidden = !(isHost && full);
+  $('roomFull').textContent = 'Room penuh (maksimal ' + MAX_PEERS + ' orang).';
 }
 
 function showQr(on) {
@@ -253,15 +301,19 @@ function showQr(on) {
   box.hidden = !on;
   if (!on) return;
   const link = roomLink($('roomCode').textContent);
-  try {
-    const qr = qrcode(0, 'M');   // 0 = ukuran otomatis
-    qr.addData(link);
-    qr.make();
-    $('qr').innerHTML = qr.createSvgTag({ scalable: true, margin: 0 });
-  } catch (e) {
-    console.error(e);
-    box.hidden = true;
-    return;
+  const holder = $('qr');
+  if (holder.dataset.for !== link) {
+    try {
+      const qr = qrcode(0, 'M');   // 0 = ukuran otomatis
+      qr.addData(link);
+      qr.make();
+      holder.innerHTML = qr.createSvgTag({ scalable: true, margin: 0 });
+      holder.dataset.for = link;
+    } catch (e) {
+      console.error(e);
+      box.hidden = true;
+      return;
+    }
   }
   // localhost / IP lokal tidak bisa dibuka dari HP lain
   $('qrWarn').hidden = !/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname);
@@ -274,13 +326,17 @@ function roomLink(code) {
 function createRoom() {
   const code = makeCode();
   isHost = true;
+  hostId = ROOM_PREFIX + code;
   openRoomView(code);
-  setStatus('Menunggu teman gabung…', 'wait');
 
-  const p = new Peer(ROOM_PREFIX + code, PEER_OPTIONS);
+  const p = new Peer(hostId, PEER_OPTIONS);
   peer = p;
   p.on('connection', (c) => {
-    if (conn && conn.open) { c.close(); return; } // room hanya untuk 1 teman
+    if (links.size >= MAX_PEERS - 1) {          // room penuh: kasih tahu lalu tutup
+      const full = () => { sendCtl(c, { type: 'full' }); setTimeout(() => { try { c.close(); } catch {} }, 800); };
+      if (c.open) full(); else c.on('open', full);
+      return;
+    }
     setupConn(c);
   });
   p.on('error', handlePeerError);
@@ -294,26 +350,37 @@ function joinRoom(raw) {
   }
   homeMessage('');
   isHost = false;
+  hostId = ROOM_PREFIX + code;
   openRoomView(code);
-  setStatus('Menghubungkan…', 'wait');
 
   const p = new Peer(undefined, PEER_OPTIONS);
   peer = p;
   p.on('open', () => {
     if (p !== peer) return;
     // serialization 'raw' = data biner dikirim apa adanya, tanpa dibungkus (hemat CPU)
-    setupConn(p.connect(ROOM_PREFIX + code, { reliable: true, serialization: 'raw' }));
+    setupConn(p.connect(hostId, { reliable: true, serialization: 'raw' }));
+  });
+  // Peserta yang gabung belakangan akan menyambung ke kita (semua saling terhubung langsung)
+  p.on('connection', (c) => {
+    if (links.size >= MAX_PEERS - 1) { try { c.close(); } catch {} return; }
+    setupConn(c);
   });
   p.on('error', handlePeerError);
 }
 
 function leave() {
-  if (answerResolver) { answerResolver({ ok: false, reason: 'koneksi ditutup' }); answerResolver = null; }
-  if (incoming) incoming.sink.abort();
-  const c = conn, p = peer;
-  conn = null; peer = null; incoming = null; pendingOffer = null; sending = false;
-  wakeUp();
-  try { c && c.close(); } catch {}
+  const p = peer;
+  const all = [...links.values()];
+  links.clear();
+  peer = null;
+  hostId = '';
+  for (const l of all) {
+    if (l.answerResolver) { l.answerResolver({ ok: false, reason: 'koneksi ditutup' }); l.answerResolver = null; }
+    if (l.incoming) l.incoming.sink.abort();
+    l.incoming = null; l.pendingOffer = null;
+    try { l.conn.close(); } catch {}
+    wakeUp(l);
+  }
   try { p && p.destroy(); } catch {}
   history.replaceState(null, '', location.pathname);
   updateAwake();
@@ -323,8 +390,12 @@ function leave() {
 function handlePeerError(err) {
   console.error(err);
   if (err.type === 'peer-unavailable') {
-    leave();
-    homeMessage('Room tidak ditemukan. Cek kodenya, atau minta teman membuat room baru.');
+    // Gagal menyambung ke pembuat room = room tidak ada.
+    // Gagal menyambung ke peserta lain (dia keburu keluar) cukup diabaikan.
+    if (!isHost && hostId && String(err.message || '').includes(hostId)) {
+      leave();
+      homeMessage('Room tidak ditemukan. Cek kodenya, atau minta teman membuat room baru.');
+    }
   } else if (err.type === 'unavailable-id') {
     leave();      // kode kebetulan sudah dipakai orang lain, buat ulang dengan kode baru
     createRoom();
@@ -336,41 +407,60 @@ function handlePeerError(err) {
 }
 
 /* ============================================================
-   KONEKSI P2P
+   KONEKSI P2P (satu room = banyak peserta, semua saling tersambung)
+   Pembuat room menjadi pintu masuk: peserta baru menyambung ke pembuat room,
+   lalu pembuat room memberi daftar peserta lain, dan peserta baru menyambung ke mereka juga.
    ============================================================ */
 function setupConn(c) {
-  conn = c;
+  const id = c.peer;
+  if (links.has(id)) { try { c.close(); } catch {} return; }
+  const link = newLink(c);
+  links.set(id, link);
 
   const opened = () => {
-    if (c !== conn) return;
-    setStatus('Terhubung langsung (P2P)', 'ok');
-    $('sendBox').hidden = false;
-    showQr(false);
+    if (links.get(id) !== link) return;
+    sendCtl(c, { type: 'hello', name: myName });
+    if (isHost) sendCtl(c, { type: 'peers', list: openLinks().filter((l) => l !== link).map((l) => l.id) });
+    refreshRoom();
   };
   if (c.open) opened(); else c.on('open', opened);
 
-  c.on('data', (data) => { if (c === conn) onData(data); });
-  c.on('close', () => { if (c === conn) onDisconnect(); });
-  c.on('error', handlePeerError);
+  c.on('data', (data) => { if (links.get(id) === link) onData(link, data); });
+  c.on('close', () => { if (links.get(id) === link) onDisconnect(link); });
+  c.on('error', (err) => {
+    if (id === hostId && !everConnected) handlePeerError(err); // gagal sambung ke pembuat room
+    else console.warn('Koneksi ke ' + id + ' bermasalah:', err);
+  });
 }
 
-function onDisconnect() {
-  $('sendBox').hidden = true;
-  if (answerResolver) { answerResolver({ ok: false, reason: 'koneksi terputus' }); answerResolver = null; }
-  if (pendingOffer) { pendingOffer.clearButtons(); pendingOffer.hideBar(); pendingOffer.sub('Dibatalkan: koneksi terputus'); pendingOffer = null; }
-  if (incoming) {
-    incoming.sink.abort();
-    incoming.card.hideBar();
-    incoming.card.sub('Gagal: koneksi terputus sebelum selesai');
-    incoming = null;
-  }
-  sending = false;
-  conn = null;
-  wakeUp();
-  updateAwake();
+// Sambung ke sesama peserta. Kalau negosiasi macet (jaringan ketat), ulangi sampai 3 kali.
+function connectToPeer(id, attempt) {
+  if (!peer || links.has(id)) return;
+  const c = peer.connect(id, { reliable: true, serialization: 'raw' });
+  setupConn(c);
+  const link = links.get(id);
+  setTimeout(() => {
+    if (!link || links.get(id) !== link || link.conn.open) return;
+    links.delete(id);
+    try { c.close(); } catch {}
+    if (attempt < 3) connectToPeer(id, attempt + 1);
+    else console.warn('Gagal menyambung ke', id);
+  }, 12000);
+}
 
-  if (isHost) { setStatus('Teman keluar. Menunggu gabung lagi…', 'wait'); showQr(true); }
-  else setStatus('Koneksi terputus', 'err');
+function onDisconnect(link) {
+  if (link.answerResolver) { link.answerResolver({ ok: false, reason: 'koneksi terputus' }); link.answerResolver = null; }
+  if (link.pendingOffer) { link.pendingOffer.clearButtons(); link.pendingOffer.hideBar(); link.pendingOffer.sub('Dibatalkan: koneksi dengan ' + nameOf(link) + ' terputus'); link.pendingOffer = null; }
+  if (link.incoming) {
+    link.incoming.sink.abort();
+    link.incoming.card.hideBar();
+    link.incoming.card.sub('Gagal: koneksi dengan ' + nameOf(link) + ' terputus sebelum selesai');
+    link.incoming = null;
+  }
+  links.delete(link.id);
+  wakeUp(link);
+  updateAwake();
+  refreshRoom();
 }
 
 /* ============================================================
@@ -496,40 +586,44 @@ async function planStorage(size) {
    Selama mengirim, penerima rutin mengirim 'ack' (jumlah byte yang sudah ditulis ke disk).
    Pengirim berhenti sebentar kalau data yang belum dikonfirmasi sudah > WINDOW.
    ============================================================ */
-async function sendFiles(files) {
-  if (sending) { alert('Masih ada file yang sedang dikirim.'); return; }
-  sending = true;
-  updateAwake();
-  try {
+// File dikirim ke SEMUA peserta lain. Tiap peserta punya antrean sendiri, jadi pengiriman
+// ke beberapa orang berjalan paralel dan satu penerima yang lambat tidak menahan yang lain.
+function sendFiles(files) {
+  const targets = openLinks();
+  if (!targets.length) return;
+  for (const link of targets) {
     for (const file of files) {
-      if (!conn || !conn.open) break;
-      await sendOne(file);
+      link.active++;
+      link.queue = link.queue
+        .then(() => sendOne(link, file))
+        .catch((err) => console.error(err))
+        .finally(() => { link.active--; updateAwake(); });
     }
-  } finally {
-    sending = false;
-    updateAwake();
   }
+  updateAwake();
 }
 
-async function sendOne(file) {
-  const c = conn;
+async function sendOne(link, file) {
+  const c = link.conn;
+  if (!c.open) return;
+  const who = nameOf(link);
   const card = makeCard(file.name, fmtSize(file.size));
-  const fail = (why) => { card.hideBar(); card.sub('Gagal: ' + why); };
+  const fail = (why) => { card.hideBar(); card.sub('Gagal ke ' + who + ': ' + why); };
 
   card.state('offer');
-  card.sub('Menunggu teman menerima…');
+  card.sub('Menunggu ' + who + ' menerima…');
   sendCtl(c, { type: 'meta', name: file.name, size: file.size, mime: file.type });
 
-  const answer = await new Promise((resolve) => (answerResolver = resolve));
-  answerResolver = null;
-  if (!answer.ok) { card.hideBar(); card.sub('Ditolak: ' + (answer.reason || 'teman menolak file ini')); return; }
+  const answer = await new Promise((resolve) => (link.answerResolver = resolve));
+  link.answerResolver = null;
+  if (!answer.ok) { card.hideBar(); card.sub('Ditolak ' + who + ': ' + (answer.reason || 'menolak file ini')); return; }
 
   card.state('send');
-  acked = 0;
-  abortReason = '';
+  link.acked = 0;
+  link.abortReason = '';
   if (c.dataChannel) {
     c.dataChannel.bufferedAmountLowThreshold = 1024 * 1024;
-    c.dataChannel.onbufferedamountlow = wakeUp;
+    c.dataChannel.onbufferedamountlow = () => wakeUp(link);
   }
   const t0 = performance.now();
   let offset = 0;
@@ -539,79 +633,94 @@ async function sendOne(file) {
 
     for (let i = 0; i < buf.byteLength; i += CHUNK) {
       // Tunggu kalau penerima belum sempat menulis, atau antrean kirim browser penuh
-      while (c.open && !abortReason &&
-             (offset + i - acked > WINDOW || (c.dataChannel && c.dataChannel.bufferedAmount > 4 * 1024 * 1024))) {
-        await waitWake();
+      while (c.open && !link.abortReason &&
+             (offset + i - link.acked > WINDOW || (c.dataChannel && c.dataChannel.bufferedAmount > 4 * 1024 * 1024))) {
+        await waitWake(link);
       }
-      if (abortReason) return fail('dibatalkan teman (' + abortReason + ')');
+      if (link.abortReason) return fail('dibatalkan (' + link.abortReason + ')');
       if (!c.open) return fail('koneksi terputus');
       c.send(new Uint8Array(buf, i, Math.min(CHUNK, buf.byteLength - i)));
     }
 
     offset += buf.byteLength;
-    card.report('Mengirim', offset, file.size, t0);
+    card.report('Mengirim ke ' + who, offset, file.size, t0);
   }
 
   sendCtl(c, { type: 'done' });
 
   // Anggap selesai setelah penerima mengonfirmasi semua byte sudah tersimpan
-  card.sub('Menunggu penerima menyimpan…');
-  while (c.open && !abortReason && acked < file.size) await waitWake();
-  if (abortReason) return fail('dibatalkan teman (' + abortReason + ')');
-  if (acked < file.size) return fail('koneksi terputus sebelum penerima selesai');
+  card.sub('Menunggu ' + who + ' menyimpan…');
+  while (c.open && !link.abortReason && link.acked < file.size) await waitWake(link);
+  if (link.abortReason) return fail('dibatalkan (' + link.abortReason + ')');
+  if (link.acked < file.size) return fail('koneksi terputus sebelum selesai');
 
   card.progress(1);
   card.state('done');
-  card.sub('Terkirim · ' + fmtSize(file.size));
+  card.sub('Terkirim ke ' + who + ' · ' + fmtSize(file.size));
 }
 
 /* ============================================================
    TERIMA FILE
    ============================================================ */
-function onData(data) {
+function onData(link, data) {
   if (typeof data === 'string') {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
-    if (msg && typeof msg === 'object') onControl(msg);
+    if (msg && typeof msg === 'object') onControl(link, msg);
   } else if (data instanceof ArrayBuffer) {
-    onChunk(data);
+    onChunk(link, data);
   }
 }
 
-async function onControl(msg) {
+async function onControl(link, msg) {
   switch (msg.type) {
-    case 'meta':   return onOffer(msg);
-    case 'accept': if (answerResolver) answerResolver({ ok: true }); return;
-    case 'reject': if (answerResolver) answerResolver({ ok: false, reason: String(msg.reason || '') }); return;
-    case 'ack':    if (Number.isFinite(msg.n)) { acked = Math.max(acked, msg.n); wakeUp(); } return;
-    case 'abort':  abortReason = String(msg.reason || 'tanpa alasan'); wakeUp(); return;
-    case 'done':   return onDone();
+    case 'hello':
+      link.name = String(msg.name || '').replace(/[^\w\- ]/g, '').slice(0, 24) || '';
+      // Balas sekali, supaya nama kita sampai walau 'hello' pertama sempat hilang saat saluran baru terbuka
+      if (!msg.re && !link.replied) { link.replied = true; sendCtl(link.conn, { type: 'hello', name: myName, re: true }); }
+      return refreshRoom();
+    case 'peers':   // daftar peserta lain dari pembuat room: sambungkan ke semuanya
+      if (isHost || link.id !== hostId || !Array.isArray(msg.list) || !peer) return;
+      for (const id of msg.list.slice(0, MAX_PEERS)) {
+        if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id) || id === peer.id || links.has(id)) continue;
+        connectToPeer(id, 1);
+      }
+      return;
+    case 'full':
+      if (link.id === hostId) { leave(); homeMessage('Room penuh (maksimal ' + MAX_PEERS + ' orang).'); }
+      return;
+    case 'meta':   return onOffer(link, msg);
+    case 'accept': if (link.answerResolver) link.answerResolver({ ok: true }); return;
+    case 'reject': if (link.answerResolver) link.answerResolver({ ok: false, reason: String(msg.reason || '') }); return;
+    case 'ack':    if (Number.isFinite(msg.n)) { link.acked = Math.max(link.acked, msg.n); wakeUp(link); } return;
+    case 'abort':  link.abortReason = String(msg.reason || 'tanpa alasan'); wakeUp(link); return;
+    case 'done':   return onDone(link);
   }
 }
 
-function onChunk(buf) {
-  const inc = incoming;
+function onChunk(link, buf) {
+  const inc = link.incoming;
   if (!inc) return;
   inc.got += buf.byteLength;
-  if (inc.got > inc.size) return failIncoming(inc, 'data melebihi ukuran file');
+  if (inc.got > inc.size) return failIncoming(link, inc, 'data melebihi ukuran file');
   inc.sink.write(buf);
-  inc.card.report('Menerima', inc.got, inc.size, inc.t0);
+  inc.card.report('Menerima dari ' + nameOf(link), inc.got, inc.size, inc.t0);
 }
 
-async function onDone() {
-  const inc = incoming;
+async function onDone(link) {
+  const inc = link.incoming;
   if (!inc) return;
-  incoming = null;
+  link.incoming = null;
   updateAwake();
 
-  if (inc.got !== inc.size) { incoming = inc; return failIncoming(inc, 'file tidak lengkap'); }
+  if (inc.got !== inc.size) { link.incoming = inc; return failIncoming(link, inc, 'file tidak lengkap'); }
 
   inc.card.sub('Menyimpan…');
   try {
     const file = await inc.sink.finish();
     inc.card.progress(1);
     if (file) {
-      inc.card.sub('Selesai · ' + fmtSize(inc.size));
+      inc.card.sub('Selesai dari ' + nameOf(link) + ' · ' + fmtSize(inc.size));
       inc.card.link('Unduh', URL.createObjectURL(file), inc.name);
     } else {
       inc.card.sub('Tersimpan · ' + fmtSize(inc.size) + ' · ' + inc.savedAs);
@@ -620,42 +729,44 @@ async function onDone() {
   } catch (err) {
     inc.card.hideBar();
     inc.card.sub('Gagal menyimpan: ' + (err.message || err));
-    sendCtl(conn, { type: 'abort', reason: 'gagal menyimpan' });
+    sendCtl(link.conn, { type: 'abort', reason: 'gagal menyimpan' });
   }
 }
 
-function failIncoming(inc, why) {
-  if (incoming === inc) incoming = null;
+function failIncoming(link, inc, why) {
+  if (link.incoming === inc) link.incoming = null;
   inc.sink.abort();
   inc.card.hideBar();
   inc.card.sub('Gagal: ' + why);
-  sendCtl(conn, { type: 'abort', reason: why });
+  sendCtl(link.conn, { type: 'abort', reason: why });
   updateAwake();
 }
 
-async function onOffer(m) {
-  const c = conn;
+async function onOffer(link, m) {
+  const c = link.conn;
+  const who = nameOf(link);
+  const alive = () => links.get(link.id) === link && c.open;
   const valid = typeof m.name === 'string' && Number.isFinite(m.size) && m.size >= 0;
   if (!valid) return sendCtl(c, { type: 'reject', reason: 'permintaan tidak valid' });
-  if (incoming || pendingOffer) return sendCtl(c, { type: 'reject', reason: 'teman sedang menerima file lain' });
+  if (link.incoming || link.pendingOffer) return sendCtl(c, { type: 'reject', reason: 'penerima sedang menerima file lain darimu' });
 
-  const card = makeCard(m.name, 'Teman ingin mengirim file · ' + fmtSize(m.size));
+  const card = makeCard(m.name, who + ' ingin mengirim file · ' + fmtSize(m.size));
   card.state('offer');
-  pendingOffer = card; // tandai dulu supaya tawaran lain tidak menyelip selama pengecekan
+  link.pendingOffer = card; // tandai dulu supaya tawaran lain tidak menyelip selama pengecekan
 
   const plan = await planStorage(m.size);
   const reason = plan.reason;
-  if (c !== conn) return; // koneksi sudah putus selama pengecekan
+  if (!alive()) return; // koneksi sudah putus selama pengecekan
   if (plan.warn) card.sub(plan.warn);
   if (reason) {
-    pendingOffer = null;
+    link.pendingOffer = null;
     card.hideBar();
     card.sub('Ditolak otomatis: ' + reason);
     return sendCtl(c, { type: 'reject', reason });
   }
 
   const acceptHandler = async () => {
-    if (!c.open || pendingOffer !== card) return;
+    if (!c.open || link.pendingOffer !== card) return;
     card.clearButtons();
     card.sub('Menyiapkan penyimpanan…');
 
@@ -687,34 +798,34 @@ async function onOffer(m) {
     // 3) RAM, hanya untuk file kecil
     if (!sink) {
       if (!plan.canRam) {
-        pendingOffer = null;
+        link.pendingOffer = null;
         card.hideBar();
         card.sub('Gagal: penyimpanan browser tidak bisa dipakai untuk file sebesar ini');
         return sendCtl(c, { type: 'reject', reason: 'penyimpanan browser penerima tidak bisa dipakai' });
       }
       sink = openMemorySink(m.mime);
     }
-    if (c !== conn || !c.open) { sink.abort(); return; } // putus selama menyiapkan
+    if (!alive()) { sink.abort(); return; } // putus selama menyiapkan
 
-    pendingOffer = null;
+    link.pendingOffer = null;
     const inc = { name: m.name, size: m.size, got: 0, lastAck: 0, sink, card, savedAs, t0: performance.now() };
-    incoming = inc;
-    sink.onError = (why) => failIncoming(inc, /Quota/i.test(why) ? 'penyimpanan perangkat penuh' : why);
+    link.incoming = inc;
+    sink.onError = (why) => failIncoming(link, inc, /Quota/i.test(why) ? 'penyimpanan perangkat penuh' : why);
     sink.onWritten = (total) => {
       // Kabari pengirim tiap ~1 MB tertulis (dan di akhir)
       if (total - inc.lastAck >= 1024 * 1024 || total === inc.size) {
         inc.lastAck = total;
-        sendCtl(conn, { type: 'ack', n: total });
+        sendCtl(c, { type: 'ack', n: total });
       }
     };
     card.state('send');
-    card.sub('Menerima… 0%');
+    card.sub('Menerima dari ' + who + '… 0%');
     sendCtl(c, { type: 'accept' });
     updateAwake();
   };
 
   const rejectHandler = () => {
-    pendingOffer = null;
+    link.pendingOffer = null;
     card.clearButtons();
     card.hideBar();
     card.sub('Kamu menolak file ini');
