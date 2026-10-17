@@ -17,7 +17,7 @@ Semua yang dipakai gratis:
 | STUN | `stun.l.google.com:19302` |
 | TURN (cadangan) | Metered Open Relay (opsional, langkah 8) |
 
-> Tidak perlu install Node.js, tidak ada build, tidak ada database. Ini hanya file statis: `index.html`, `style.css`, `app.js` (+ `writer.js`, `sw.js`, `peerjs.min.js`, `qrcode.js`, dan `jsqr.js`).
+> Tidak perlu install Node.js, tidak ada build, tidak ada database. Ini hanya file statis: `index.html`, `style.css`, `app.js` (+ `writer.js`, `peerjs.min.js`, dan `qrcode.js`).
 
 ---
 
@@ -31,8 +31,6 @@ p2p-share/
 ├── writer.js       Worker yang menulis file yang diterima langsung ke disk
 ├── peerjs.min.js   Library PeerJS 1.5.4 (disimpan lokal, tanpa CDN)
 ├── qrcode.js       Library pembuat QR code (qrcode-generator 1.4.4, MIT, lokal)
-├── jsqr.js         Library pembaca QR code untuk tombol Scan QR (jsQR 1.4.0, Apache-2.0, lokal)
-├── sw.js           Service worker: syarat agar bisa dipasang sebagai aplikasi dan dibuka offline
 ├── favicon.svg     Ikon tab browser (utama)
 ├── favicon.ico     Ikon tab untuk browser lama (16 dan 32 px)
 ├── apple-touch-icon.png   Ikon saat halaman ditambahkan ke layar utama iPhone/iPad
@@ -183,35 +181,6 @@ Semua warna ada di bagian paling atas `style.css`, dalam variabel `:root` (mode 
 | `--bg` | Warna dasar halaman |
 
 Efek blur butuh browser modern. Kalau browser tidak mendukung, atau pengguna mengaktifkan "kurangi transparansi" di pengaturan perangkat, panel otomatis memakai warna solid, jadi tulisan tetap terbaca. Supaya perangkat tidak terbebani, bercak latar dibuat dengan gradien (bukan filter blur), dan **selama transfer berlangsung blur kaca dimatikan otomatis** (panel jadi sedikit lebih pekat, lalu kembali normal setelah selesai). Di lingkungan tes tanpa GPU, efek blur penuh membuat transfer sekitar 2 sampai 3 kali lebih lambat, dan setelah dua langkah ini kecepatan kembali normal. Kalau tetap terasa berat di HP lama, ubah `--glass-bg` jadi lebih pekat dan hapus `backdrop-filter` di bagian "KACA" pada `style.css`.
-
-### Setelah deploy versi baru: muat ulang SEMUA tab
-
-Halaman yang sudah terbuka tetap memakai kode lama sampai di-refresh. Kalau pembuat room masih memakai tab lama, peserta baru hanya bisa masuk 1 orang dan sisanya macet di "Menghubungkan…". Sebelum mencoba, tekan **Ctrl+Shift+R** (atau tutup tab lalu buka lagi) di semua perangkat, termasuk pembuat room, lalu buat room baru. Nomor versi tampil kecil di bagian bawah halaman ("Versi 3 · banyak peserta") untuk memeriksanya.
-
-### Pasang sebagai aplikasi Android dan iOS (PWA)
-
-Website ini sudah berupa **PWA** (Progressive Web App): bisa dipasang ke layar utama dan dibuka seperti aplikasi biasa, tanpa bilah browser, tanpa Play Store atau App Store, dan gratis. Tidak perlu build apa pun, cukup deploy seperti biasa.
-
-**Android (Chrome):**
-1. Buka alamat website. Kartu **Pasang sebagai aplikasi** muncul di beranda, tekan **Pasang**.
-2. Kalau kartunya tidak muncul: menu Chrome (titik tiga) lalu **Instal aplikasi** atau **Tambahkan ke layar utama**.
-3. Tekan lama ikon aplikasi untuk pintasan **Buat room**.
-
-**iPhone/iPad (harus Safari):**
-1. Buka alamat website di Safari.
-2. Ketuk tombol **Bagikan** (kotak dengan panah ke atas), pilih **Tambah ke Layar Utama**, lalu **Tambah**.
-3. Buka dari ikon di layar utama.
-
-**Laptop (Chrome/Edge/Brave):** ikon **Install** muncul di sebelah kolom alamat.
-
-**Tombol Scan QR.** Di beranda ada tombol **Scan QR** di kartu Gabung room. Tekan, izinkan kamera, arahkan ke QR milik pembuat room, dan langsung masuk. Di Android Chrome dipakai pemindai bawaan browser. Di iPhone dipakai `jsqr.js` (dimuat hanya saat tombol ditekan). Kamera hanya berjalan selama layar pemindai terbuka. Kalau izin kamera ditolak, muncul pesan dan kodenya tetap bisa diketik.
-
-**Setelah deploy versi baru** aplikasi mengambil kode terbaru otomatis selama online (strategi "jaringan dulu" di `sw.js`). Saat offline, aplikasi tetap terbuka dari cache, tetapi kirim file tetap butuh internet untuk perkenalan antar perangkat.
-
-**Batasan yang perlu diketahui:**
-- Seperti halaman web biasa, transfer berhenti kalau aplikasi dipindah ke latar belakang atau layar mati. Layar dijaga tetap menyala selama transfer, jadi biarkan aplikasi terbuka.
-- Di iPhone, tombol Unduh dan penyimpanan file besar memakai kemampuan Safari. Perilakunya bisa berbeda antar versi iOS. Coba dengan file kecil dulu.
-- Ini bukan aplikasi "native". Kalau suatu hari butuh masuk toko aplikasi, jalurnya memakai **Capacitor** (pembungkus WebView untuk Android dan iOS). Android bisa dibangun gratis lewat GitHub Actions. iOS butuh Mac dan akun Apple Developer (sekitar $99 per tahun).
 
 ### QR code untuk gabung room
 
