@@ -118,6 +118,7 @@ let peer = null;           // koneksi ke server signaling PeerJS
 let isHost = false;        // true = yang membuat room
 let hostId = '';           // ID PeerJS milik pembuat room
 let everConnected = false; // sudah pernah tersambung ke seseorang di room ini?
+let oldHost = false;       // pembuat room memakai versi lama (tanpa fitur banyak peserta)?
 const myName = 'Peserta-' + makeCode().slice(0, 3); // nama acak, ditampilkan ke peserta lain
 
 function newLink(c) {
@@ -258,6 +259,7 @@ function openRoomView(code) {
   $('transferWrap').hidden = true;
   $('room').classList.remove('has-transfers');
   everConnected = false;
+  oldHost = false;
   show('room');
   refreshRoom();
 }
@@ -268,7 +270,8 @@ function refreshRoom() {
   const total = others.length + 1;
   if (others.length) everConnected = true;
 
-  if (others.length) setStatus('Terhubung · ' + total + ' orang', 'ok');
+  if (!isHost && oldHost && others.length) setStatus('Host memakai versi lama · hanya 2 orang', 'wait');
+  else if (others.length) setStatus('Terhubung · ' + total + ' orang', 'ok');
   else if (isHost) setStatus('Menunggu teman gabung…', 'wait');
   else if (everConnected) setStatus('Koneksi terputus', 'err');
   else setStatus('Menghubungkan…', 'wait');
@@ -358,7 +361,22 @@ function joinRoom(raw) {
   p.on('open', () => {
     if (p !== peer) return;
     // serialization 'raw' = data biner dikirim apa adanya, tanpa dibungkus (hemat CPU)
-    setupConn(p.connect(hostId, { reliable: true, serialization: 'raw' }));
+    const hc = p.connect(hostId, { reliable: true, serialization: 'raw' });
+    setupConn(hc);
+    const hl = links.get(hostId);
+    // Host versi lama tidak mengirim 'hello': beri tahu, jangan diam saja
+    setTimeout(() => {
+      if (hl && links.get(hostId) === hl && hl.conn.open && !hl.gotHello) { oldHost = true; refreshRoom(); }
+    }, 4000);
+    // Belum tersambung: beri petunjuk dulu, lalu menyerah dengan penjelasan
+    setTimeout(() => {
+      if (p === peer && !everConnected && hl === links.get(hostId)) setStatus('Masih menghubungkan… (room penuh atau host versi lama?)', 'wait');
+    }, 8000);
+    setTimeout(() => {
+      if (p !== peer || everConnected || hl !== links.get(hostId)) return;
+      leave();
+      homeMessage('Tidak bisa tersambung ke room. Kemungkinan: room penuh, pembuat room memakai versi lama (minta dia memuat ulang halaman dan membuat room baru), atau jaringan memblokir koneksi langsung.');
+    }, 25000);
   });
   // Peserta yang gabung belakangan akan menyambung ke kita (semua saling terhubung langsung)
   p.on('connection', (c) => {
@@ -460,6 +478,12 @@ function onDisconnect(link) {
   links.delete(link.id);
   wakeUp(link);
   updateAwake();
+  if (!isHost && link.id === hostId && !everConnected) {
+    // Pembuat room menutup koneksi sebelum kita sempat masuk
+    leave();
+    homeMessage('Room tidak bisa dimasuki. Room mungkin penuh, atau pembuat room memakai versi lama: minta dia memuat ulang halaman lalu membuat room baru.');
+    return;
+  }
   refreshRoom();
 }
 
@@ -675,6 +699,8 @@ function onData(link, data) {
 async function onControl(link, msg) {
   switch (msg.type) {
     case 'hello':
+      link.gotHello = true;
+      if (link.id === hostId) oldHost = false;
       link.name = String(msg.name || '').replace(/[^\w\- ]/g, '').slice(0, 24) || '';
       // Balas sekali, supaya nama kita sampai walau 'hello' pertama sempat hilang saat saluran baru terbuka
       if (!msg.re && !link.replied) { link.replied = true; sendCtl(link.conn, { type: 'hello', name: myName, re: true }); }
@@ -866,8 +892,160 @@ drop.addEventListener('drop', (e) => {
   if (files.length) sendFiles(files);
 });
 
+/* ============================================================
+   PASANG SEBAGAI APLIKASI (PWA)
+   Android/desktop: tombol Pasang. iPhone/iPad: petunjuk "Tambah ke Layar Utama".
+   ============================================================ */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch((err) => console.warn('Service worker gagal:', err));
+}
+
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let installEvt = null;
+
+function installDismissed() { try { return localStorage.getItem('p2pshare-install-closed') === '1'; } catch { return false; } }
+
+function showInstallCard() {
+  if (isStandalone() || installDismissed()) return;
+  if (installEvt) {
+    $('installText').textContent = 'Buka langsung dari layar utama, tampil seperti aplikasi biasa tanpa bilah browser.';
+    $('btnInstall').hidden = false;
+  } else if (isIOS) {
+    $('installText').textContent = 'Di Safari, ketuk tombol Bagikan (kotak dengan panah ke atas), lalu pilih "Tambah ke Layar Utama".';
+    $('btnInstall').hidden = true;
+  } else {
+    return;
+  }
+  $('installCard').hidden = false;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; showInstallCard(); });
+window.addEventListener('appinstalled', () => { installEvt = null; $('installCard').hidden = true; });
+$('btnInstall').onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  try { await installEvt.userChoice; } catch {}
+  installEvt = null;
+  $('installCard').hidden = true;
+};
+$('btnInstallClose').onclick = () => {
+  $('installCard').hidden = true;
+  try { localStorage.setItem('p2pshare-install-closed', '1'); } catch {}
+};
+showInstallCard();
+
+/* ============================================================
+   SCAN QR DI DALAM APLIKASI
+   Pakai BarcodeDetector bawaan browser kalau ada (Chrome Android). Kalau tidak (iPhone/Safari),
+   pakai jsQR yang dimuat hanya saat pemindai dibuka.
+   ============================================================ */
+let scanner = null; // { stop() } selama pemindai terbuka
+
+// Ambil kode room dari isi QR: link ...?room=KODE, atau langsung 6 karakter kode
+function codeFromScan(text) {
+  text = String(text || '').trim();
+  let code;
+  try { code = new URL(text).searchParams.get('room') || ''; } catch { code = text; }
+  code = code.toUpperCase();
+  return /^[A-Z0-9]{6}$/.test(code) ? code : '';
+}
+
+function loadJsQr() {
+  if (window.jsQR) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = 'jsqr.js';
+    el.onload = resolve;
+    el.onerror = () => reject(new Error('Pemindai gagal dimuat'));
+    document.head.appendChild(el);
+  });
+}
+
+function closeScanner() {
+  if (scanner) scanner.stop();
+  scanner = null;
+  $('scanner').hidden = true;
+}
+
+async function openScanner() {
+  if (scanner) return;
+  const msg = (t) => ($('scanMsg').textContent = t);
+  const video = $('scanVideo');
+  $('scanner').hidden = false;
+  msg('Menyalakan kamera…');
+
+  let stream = null;
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    video.srcObject = null;
+  };
+  scanner = { stop };
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+      audio: false,
+    });
+    if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; } // dibatalkan saat menunggu izin
+    video.srcObject = stream;
+    await video.play();
+
+    const detector = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+    if (!detector) await loadJsQr();
+    if (stopped) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    msg('Arahkan kamera ke QR room');
+
+    const tick = async () => {
+      if (stopped) return;
+      let text = '';
+      if (video.videoWidth) {
+        try {
+          if (detector) {
+            const found = await detector.detect(video);
+            text = found.length ? found[0].rawValue : '';
+          } else {
+            const k = Math.min(1, 640 / video.videoWidth); // perkecil supaya ringan
+            canvas.width = Math.round(video.videoWidth * k);
+            canvas.height = Math.round(video.videoHeight * k);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const r = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+            text = r ? r.data : '';
+          }
+        } catch {}
+      }
+      if (stopped) return;
+      const code = codeFromScan(text);
+      if (code) { closeScanner(); joinRoom(code); return; }
+      if (text) msg('QR ini bukan QR room P2P Share. Coba QR lain.');
+      setTimeout(tick, 130);
+    };
+    tick();
+  } catch (err) {
+    console.warn('Scan QR gagal:', err);
+    stop();
+    if (err && err.name === 'NotAllowedError') msg('Izin kamera ditolak. Aktifkan izin kamera untuk situs ini di pengaturan browser, atau ketik kodenya.');
+    else if (err && err.name === 'NotFoundError') msg('Kamera tidak ditemukan di perangkat ini. Ketik kodenya saja.');
+    else msg('Kamera tidak bisa dibuka. Ketik kodenya saja.');
+  }
+}
+
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) $('btnScan').hidden = false;
+$('btnScan').onclick = openScanner;
+$('btnScanClose').onclick = closeScanner;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && scanner) closeScanner(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && scanner) closeScanner(); });
+
 cleanupStorage();
 
 // Buka link ...?room=KODE -> langsung gabung
-const roomParam = new URLSearchParams(location.search).get('room');
+const params = new URLSearchParams(location.search);
+const roomParam = params.get('room');
 if (roomParam) joinRoom(roomParam);
+else if (params.get('new')) { history.replaceState(null, '', location.pathname); createRoom(); } // pintasan "Buat room" di ikon aplikasi

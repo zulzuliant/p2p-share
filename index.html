@@ -15,6 +15,12 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="site.webmanifest">
 
+  <!-- Dipasang di layar utama (iOS dan Android) -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="P2P Share">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
   <link rel="stylesheet" href="style.css">
 </head>
 <body data-view="home">
@@ -59,6 +65,23 @@
                  autocapitalize="characters" spellcheck="false">
           <button class="primary">Gabung</button>
         </form>
+        <button id="btnScan" type="button" class="scan" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/>
+          </svg>
+          Scan QR
+        </button>
+      </div>
+
+      <div id="installCard" class="card stack-sm" hidden>
+        <div>
+          <h2>Pasang sebagai aplikasi</h2>
+          <p id="installText" class="muted"></p>
+        </div>
+        <div class="row">
+          <button id="btnInstall" class="primary" hidden>Pasang</button>
+          <button id="btnInstallClose" class="ghost">Nanti</button>
+        </div>
       </div>
 
       <p id="homeMsg" class="msg" role="alert" hidden></p>
@@ -117,8 +140,19 @@
 
     <footer>
       <small>Jangan tutup tab selama transfer berlangsung.</small>
+      <small class="ver">Versi 4 · aplikasi + scan QR</small>
     </footer>
   </main>
+
+  <!-- Pemindai QR (layar penuh) -->
+  <div id="scanner" class="scanner" role="dialog" aria-modal="true" aria-label="Scan QR room" hidden>
+    <div class="scan-box">
+      <video id="scanVideo" playsinline muted></video>
+      <div class="scan-frame" aria-hidden="true"></div>
+    </div>
+    <p id="scanMsg" class="scan-msg" role="status">Arahkan kamera ke QR room</p>
+    <button id="btnScanClose" type="button">Batal</button>
+  </div>
 
   <script src="peerjs.min.js"></script>
   <script src="qrcode.js"></script>
